@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("Next standalone image preserves the caller runtime mode before the framework forces production", () => {
   const dockerfile = readFileSync("app/Dockerfile", "utf8");
@@ -120,4 +122,52 @@ test("the required ci gate fails for a failed, cancelled or skipped prerequisite
     });
     assert.equal(run.status, result === "success" ? 0 : 1);
   }
+});
+
+test("CI accepts runtime global function mocks but still rejects unmatched modules and missing unit tests", () => {
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  const script = ci.match(/node --input-type=module <<'JS'\n([\s\S]*?)\n\s+JS/)?.[1];
+  assert.ok(script);
+  const directory = mkdtempSync(join(tmpdir(), "sdlc-ci-mocks-"));
+  try {
+    writeFileSync(join(directory, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(directory, "main.ts"), "export const value = 1;");
+    writeFileSync(join(directory, "main.test.ts"), 'test("value", () => expect(1).toBe(1));');
+    mkdirSync(join(directory, "__mocks__"));
+    const check = () => {
+      return spawnSync("node", ["--input-type=module", "-e", script], {
+        cwd: directory,
+        encoding: "utf8",
+      });
+    };
+    for (const name of ["fetch", "setTimeout", "missingResource", "toString"]) {
+      const mock = join(directory, "__mocks__", `${name}.ts`);
+      writeFileSync(mock, "export {};");
+      const run = check();
+      const supported = name === "fetch" || name === "setTimeout";
+      assert.equal(run.status, supported ? 0 : 1, run.stderr);
+      if (!supported) assert.match(run.stderr, /Mock path must mirror an implementation or declared package/);
+      rmSync(mock);
+    }
+    writeFileSync(join(directory, "__mocks__", "fetch.ts"), "export {};");
+    writeFileSync(join(directory, "main.ts"), 'import "./__mocks__/fetch";');
+    const runtimeImport = check();
+    assert.equal(runtimeImport.status, 1);
+    assert.match(runtimeImport.stderr, /Runtime implementations must not import test doubles/);
+    writeFileSync(join(directory, "main.ts"), "export const value = 1;");
+    rmSync(join(directory, "main.test.ts"));
+    const missingTest = check();
+    assert.equal(missingTest.status, 1);
+    assert.match(missingTest.stderr, /Missing colocated unit test: main.test.ts/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CI installs the locked Playwright Chromium and system dependencies before browser E2E", () => {
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  const integration = ci.split("\n  integration:")[1]?.split("\n  ci:")[0] ?? "";
+  const install = integration.indexOf("run: bun run playwright install --with-deps chromium");
+  assert.ok(install > integration.indexOf("run: just install"), "Install Chromium from the locked root Playwright dependency");
+  assert.ok(integration.indexOf("run: just e2e") > install, "Install Chromium before browser E2E");
 });

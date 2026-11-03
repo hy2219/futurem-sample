@@ -52,9 +52,12 @@ jobs:
             }
             if (file.startsWith('__mocks__/') && !existsSync(file.slice('__mocks__/'.length))) {
               const target = file.slice('__mocks__/'.length).replace(/\.[jt]sx?$/, '');
-              const packageName = target.startsWith('@') ? target.split('/').slice(0, 2).join('/') : target.split('/')[0];
-              if (!dependencies.has(packageName)) throw new Error('Mock path must mirror an implementation or declared package: ' + file);
-              require.resolve(target);
+              const globalFunction = Object.hasOwn(globalThis, target) && typeof globalThis[target] === 'function';
+              if (!globalFunction) {
+                const packageName = target.startsWith('@') ? target.split('/').slice(0, 2).join('/') : target.split('/')[0];
+                if (!dependencies.has(packageName)) throw new Error('Mock path must mirror an implementation or declared package: ' + file);
+                require.resolve(target);
+              }
             }
             if (/\.test\.[jt]sx?$/.test(file) && /mock\.(method|module|fn)\s*\(/.test(text)) {
               throw new Error('Import prepared doubles from __mocks__ instead of defining them in tests: ' + file);
@@ -109,6 +112,8 @@ jobs:
         run: bun run test:infra
       - run: just lint
       - run: just integration all
+      - name: Install Chromium for browser E2E
+        run: bun run playwright install --with-deps chromium
       - run: just e2e
       - if: always()
         run: docker compose -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
