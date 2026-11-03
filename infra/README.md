@@ -44,7 +44,9 @@ node scripts/repository-setup.ts OWNER/REPOSITORY
 생성/변경 수를 표시하며 삭제·교체·알 수 없는 리소스가 있으면 중단한다.
 최초 명령 실행은 이 제한된 생성 계획의 적용을 승인하는 것이며 `-auto-approve`는 쓰지 않는다.
 이미지 실패 시 기반 state/비밀값을 보존하고 앱 apply는 실행하지 않는다.
-중간 실패는 같은 checkout/SHA와 파일로 재실행한다. 기존 state를 빈 state로 간주하지 않는다.
+로컬 인증 파일만 준비된 상태이고 Terraform의 관리 리소스와 대상 RG의 실제 Azure 리소스가 모두 없으면,
+현재 checkout의 SHA로 초기 이미지 버전만 갱신하고 기존 인증값과 파일의 비공개 권한은 보존한다.
+리소스가 생성된 뒤의 중간 실패는 같은 checkout/SHA와 파일로 재실행한다. 기존 state를 빈 state로 간주하지 않는다.
 전체 앱이 이미 state에 있으면 초기 이미지를 다시 빌드하지 않는다.
 
 초기 이미지 빌드는 Docker 설치 없이 **Azure ACR Tasks**를 사용한다. 운영자는 ACR build 권한과

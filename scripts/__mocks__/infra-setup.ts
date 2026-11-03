@@ -53,6 +53,7 @@ export class Cloud {
   assignments: Assignment[] = [];
   demo?: { name: string; protection_rules?: unknown[]; deployment_branch_policy: { protected_branches: boolean; custom_branch_policies: boolean } };
   branchPolicies = [{ name: "main", type: "branch" }];
+  head = ids.head;
   admin = true;
   account = { id: ids.subscription, tenantId: ids.tenant, state: "Enabled" };
   providers = ["Microsoft.App", "Microsoft.ContainerRegistry", "Microsoft.OperationalInsights", "Microsoft.ManagedIdentity", "Microsoft.Network"]
@@ -104,7 +105,7 @@ export class Cloud {
     if (this.malformed && line.startsWith(this.malformed)) return result("not json");
     const value = (flag: string): string => args[args.indexOf(flag) + 1];
     if (args.some(arg => ["create", "set", "PUT", "POST", "post", "apply", "build"].includes(arg))) this.beforeMutation?.();
-    if (command === "git") return result(ids.head);
+    if (command === "git") return result(this.head);
     if (command === "node" && args[0] === resolve(this.root, "scripts/build-images.ts")) return result("");
     let response: unknown;
     if (command === "terraform") {

@@ -139,6 +139,24 @@ describe("local-only complete environment creation", () => {
       call.args.some(arg => ["create", "post", "build"].includes(arg)))).toBe(false);
     expect(cloud.state).toEqual([]);
   });
+  it.each([false, true])("uses the current SHA without rotating credentials before any Azure resources exist (empty RG: %s)", emptyGroup => {
+    cloud.failure = { command: "gh", prefix: `api repos/${config.repository}/rulesets` };
+    expect(run).toThrow(/protection is NOT confirmed/);
+    const saved = JSON.parse(read("deployment.auto.tfvars.json")) as Record<string, unknown>;
+    cloud.head = "b".repeat(40);
+    cloud.failure = undefined;
+    cloud.calls = [];
+    if (emptyGroup) cloud.groups = [{ name: config.resourceGroup, tags: { repository: config.repository } }];
+    run();
+    expect(JSON.parse(read("deployment.auto.tfvars.json"))).toEqual({
+      ...saved, image_tag: cloud.head, deployment_principal_object_id: ids.principal,
+    });
+    expect(statSync(path("deployment.auto.tfvars.json")).mode & 0o777).toBe(0o600);
+    const build = cloud.calls.find(call => call.command === "node");
+    expect(build?.args).toEqual([
+      resolve(root, "scripts/build-images.ts"), config.subscriptionId, "workshopacr123456", cloud.head, root,
+    ]);
+  });
   it("persists six private credentials before cloud writes, foundations then all seven images then apps", () => {
     cloud.beforeMutation = () => {
       expect(statSync(path("deployment.auto.tfvars.json")).mode & 0o777).toBe(0o600);
@@ -223,6 +241,27 @@ describe("local-only complete environment creation", () => {
     expect(tfCommands().some(line => line.includes("enable_apps=false"))).toBe(false);
     expect(cloud.state).toHaveLength(32);
   });
+  it("still refuses a changed SHA after foundation creation without changing saved credentials or building images", () => {
+    cloud.failure = { command: "node", prefix: resolve(root, "scripts/build-images.ts") };
+    expect(run).toThrow(/Image builds failed/);
+    const saved = read("deployment.auto.tfvars.json");
+    cloud.head = "b".repeat(40);
+    cloud.failure = undefined;
+    cloud.calls = [];
+    expect(run).toThrow(/Incomplete setup uses a different image SHA/);
+    expect(mutations()).toEqual([]);
+    expect(read("deployment.auto.tfvars.json")).toBe(saved);
+    expect(cloud.calls.some(call => call.command === "node")).toBe(false);
+  });
+  it("does not repin or rebuild the initial images when a fully deployed setup runs from a newer commit", () => {
+    run();
+    const saved = read("deployment.auto.tfvars.json");
+    cloud.head = "b".repeat(40);
+    cloud.calls = [];
+    run();
+    expect(read("deployment.auto.tfvars.json")).toBe(saved);
+    expect(cloud.calls.some(call => call.command === "node")).toBe(false);
+  });
   it("preserves ignored old bootstrap artifacts, Blob config and local .env byte-for-byte", () => {
     mkdirSync(path("bootstrap/.state"), { recursive: true });
     const old = [
@@ -239,6 +278,19 @@ describe("local-only complete environment creation", () => {
 });
 
 describe("state and credential fail-closed guards", () => {
+  it("does not repin a saved SHA with empty managed state when the Azure resource inventory is nonempty", () => {
+    cloud.failure = { command: "gh", prefix: `api repos/${config.repository}/rulesets` };
+    expect(run).toThrow(/protection is NOT confirmed/);
+    const saved = read("deployment.auto.tfvars.json");
+    cloud.head = "b".repeat(40);
+    cloud.failure = undefined;
+    cloud.groups = [{ name: config.resourceGroup, tags: { repository: config.repository } }];
+    cloud.resources = [{ id: "/existing/identity", type: "Microsoft.ManagedIdentity/userAssignedIdentities" }];
+    cloud.calls = [];
+    expect(run).toThrow(/Incomplete setup uses a different image SHA/);
+    expect(read("deployment.auto.tfvars.json")).toBe(saved);
+    expect(mutations()).toEqual([]);
+  });
   it("refuses the legacy non-VNet environment before any cloud mutation or image build", () => {
     run();
     const environment = cloud.state.find(item => item.address === "azurerm_container_app_environment.workshop");

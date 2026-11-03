@@ -277,6 +277,11 @@ export function setup(configPath = "infra/setup.local.json", root = process.cwd(
   requireValue(managed.length === 0 || saved, "Existing state requires the original private deployment variables.");
   requireValue(saved || !legacySecrets || (config.initializeFreshEnvironment === true && managed.length === 0),
     "Legacy GitHub application secrets exist but the local deployment file is missing. Restore its private backup, or review an undeployed environment and explicitly set initializeFreshEnvironment=true; existing ACR/ACA or nonempty state cannot be replaced. GitHub secrets were not adopted, deleted or rotated.");
+  if (saved && saved.image_tag !== head && managed.length === 0 && cloud.length === 0) {
+    saved.image_tag = head;
+    writeFileSync(tfvarsPath, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
+    console.log("No provisioned Azure resources; using the current checkout for initial images. Saved credentials were preserved.");
+  }
   if (existingApps.length < appAddresses.length) requireValue((saved?.image_tag ?? head) === head,
     "Incomplete setup uses a different image SHA. Check out the saved commit before resuming; never rebuild a saved tag from different sources.");
   if (!saved) {
