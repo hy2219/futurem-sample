@@ -37,6 +37,7 @@ export default function Home() {
   }
 
   return <Card title="제조 IT 시스템 조회" body="합성 데이터만 사용하는 읽기 전용 데모입니다.">
+    <Link href="/changes" text="변경 점검 보드" />
     {state.kind === "loading" && <Alert text="로그인 상태를 확인하는 중" />}
     {state.kind === "unauthenticated" && <Card title="데모 로그인 안내" body="Mock SSO로 로그인하면 IT 자산을 조회할 수 있습니다.">
       <Link href="/auth/login" text="데모 로그인" />
