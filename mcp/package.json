@@ -1,0 +1,33 @@
+{
+  "name": "@simplified-sdlc/mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc && node dist/resources/build-resources.js",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/main.js",
+    "test": "bun run build && vitest run --exclude \"integration/**\"",
+    "test:integration": "bun run build && vitest run integration/integration.test.ts",
+    "test:container": "bun run build && node --env-file=../.env node_modules/vitest/vitest.mjs run integration/container.integration.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "express": "5.2.1",
+    "jose": "6.2.12",
+    "pg": "8.23.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "10.6.0",
+    "@types/express": "5.0.6",
+    "@types/node": "^24.0.0",
+    "@types/pg": "8.23.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "version": 1, "id": "db_2", "type": "postgres",
+  "connection": { "urlEnv": "DB_2_URL" },
+  "tools": [{
+    "name": "list_change_requests",
+    "title": "DB 2: 가상 변경 요청",
+    "description": "합성 IT 변경 요청의 읽기 전용 View입니다. asset_id, team_id, status는 AND 필터입니다. 요청 생성·승인은 지원하지 않습니다.",
+    "authorization": { "audience": "mock.db_2", "scope": "changes:read" },
+    "operation": {
+      "path": "/mock/db/changes", "view": "workshop.change_request_summary",
+      "columns": ["change_id", "asset_id", "team_id", "title", "status", "risk", "planned_date"],
+      "filters": { "asset_id": "asset_id", "team_id": "team_id", "status": "status" },
+      "orderBy": "change_id", "resultKey": "change_requests", "limit": 100
+    },
+    "inputSchema": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "asset_id": { "type": "string", "minLength": 1 },
+        "team_id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["requested", "approved", "completed"] }
+      }
+    },
+    "outputSchema": {
+      "type": "object", "additionalProperties": false, "required": ["change_requests"],
+      "properties": { "change_requests": {
+        "type": "array", "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["change_id", "asset_id", "team_id", "title", "status", "risk", "planned_date"],
+          "properties": {
+            "change_id": { "type": "string" }, "asset_id": { "type": "string" }, "team_id": { "type": "string" },
+            "title": { "type": "string" }, "status": { "type": "string", "enum": ["requested", "approved", "completed"] },
+            "risk": { "type": "string", "enum": ["high", "medium", "low"] }, "planned_date": { "type": "string" }
+          }
+        }
+      }}
+    }
+  }]
+}

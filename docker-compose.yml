@@ -1,0 +1,97 @@
+name: futurem-itsm-demo
+services:
+  db_1:
+    build:
+      context: ./external_resources/db_1
+    environment:
+      POSTGRES_DB: workshop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run node scripts/setup.ts first}
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?Run node scripts/setup.ts first}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - db-1-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d workshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  db_2:
+    build:
+      context: ./external_resources/db_2
+    environment:
+      POSTGRES_DB: workshop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run node scripts/setup.ts first}
+      PG_READER_PASSWORD: ${PG_READER_PASSWORD:?Run node scripts/setup.ts first}
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - db-2-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d workshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  runtime:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    environment:
+      APP_CLIENT_ID: ${APP_CLIENT_ID:?Run node scripts/setup.ts first}
+      APP_CLIENT_SECRET: ${APP_CLIENT_SECRET:?Run node scripts/setup.ts first}
+      RESOURCE_TOKEN_KEY: ${RESOURCE_TOKEN_KEY:?Run node scripts/setup.ts first}
+      DB_1_URL: postgresql://demo_reader:${PG_READER_PASSWORD}@db_1:5432/workshop
+      DB_2_URL: postgresql://demo_reader:${PG_READER_PASSWORD}@db_2:5432/workshop
+      API_1_URL: http://api_1:8080
+      API_2_URL: http://api_2:8080
+    ports:
+      - "127.0.0.1:3101:8080"
+    depends_on:
+      db_1:
+        condition: service_healthy
+      db_2:
+        condition: service_healthy
+      api_1:
+        condition: service_healthy
+      api_2:
+        condition: service_healthy
+  sso:
+    build:
+      context: ./sso
+    environment:
+      APP_CLIENT_ID: ${APP_CLIENT_ID:?Run node scripts/setup.ts first}
+      SSO_SESSION_KEY: ${SSO_SESSION_KEY:?Run node scripts/setup.ts first}
+    ports:
+      - "127.0.0.1:3102:8080"
+  api_1:
+    build:
+      context: ./external_resources/api_1
+    environment:
+      APP_CLIENT_ID: ${APP_CLIENT_ID:?Run node scripts/setup.ts first}
+      RESOURCE_TOKEN_KEY: ${RESOURCE_TOKEN_KEY:?Run node scripts/setup.ts first}
+    ports:
+      - "127.0.0.1:3103:8080"
+  api_2:
+    build:
+      context: ./external_resources/api_2
+    environment:
+      APP_CLIENT_ID: ${APP_CLIENT_ID:?Run node scripts/setup.ts first}
+      RESOURCE_TOKEN_KEY: ${RESOURCE_TOKEN_KEY:?Run node scripts/setup.ts first}
+    ports:
+      - "127.0.0.1:3104:8080"
+  app:
+    build:
+      context: ./app
+    environment:
+      NODE_ENV: development
+      PORT: "8080"
+      MCP_URL: http://runtime:8080/mcp
+      SSO_URL: http://sso:8080
+      APP_CLIENT_ID: ${APP_CLIENT_ID:?Run node scripts/setup.ts first}
+      APP_CLIENT_SECRET: ${APP_CLIENT_SECRET:?Run node scripts/setup.ts first}
+      SSO_SESSION_KEY: ${SSO_SESSION_KEY:?Run node scripts/setup.ts first}
+    ports:
+      - "127.0.0.1:3100:8080"
+volumes:
+  db-1-data:
+  db-2-data:

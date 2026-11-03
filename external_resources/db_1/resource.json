@@ -1,0 +1,40 @@
+{
+  "version": 1, "id": "db_1", "type": "postgres",
+  "connection": { "urlEnv": "DB_1_URL" },
+  "tools": [{
+    "name": "list_it_assets",
+    "title": "DB 1: 가상 제조 IT 자산",
+    "description": "합성 품질분석·생산실적·창고 시스템의 읽기 전용 View입니다. asset_id, team_id, status는 AND 필터입니다. 내부 메모는 제공하지 않습니다.",
+    "authorization": { "audience": "mock.db", "scope": "assets:read" },
+    "operation": {
+      "path": "/mock/db/assets", "view": "workshop.asset_summary",
+      "columns": ["asset_id", "name", "system_type", "site", "status", "criticality", "team_id"],
+      "filters": { "asset_id": "asset_id", "team_id": "team_id", "status": "status" },
+      "orderBy": "asset_id", "resultKey": "assets", "limit": 100
+    },
+    "inputSchema": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "asset_id": { "type": "string", "minLength": 1 },
+        "team_id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["operational", "maintenance", "retired"] }
+      }
+    },
+    "outputSchema": {
+      "type": "object", "additionalProperties": false, "required": ["assets"],
+      "properties": { "assets": {
+        "type": "array", "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["asset_id", "name", "system_type", "site", "status", "criticality", "team_id"],
+          "properties": {
+            "asset_id": { "type": "string" }, "name": { "type": "string" },
+            "system_type": { "type": "string" }, "site": { "type": "string" },
+            "status": { "type": "string", "enum": ["operational", "maintenance", "retired"] },
+            "criticality": { "type": "string", "enum": ["high", "medium", "low"] },
+            "team_id": { "type": "string" }
+          }
+        }
+      }}
+    }
+  }]
+}

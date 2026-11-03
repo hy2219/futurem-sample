@@ -1,0 +1,175 @@
+name: Deploy workshop
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_app:
+        description: Update the existing public app as well as prepared resources
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-demo-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_REPOSITORY == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: demo
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      max-parallel: 3
+      fail-fast: false
+      matrix:
+        include:
+          - repository: external-resources
+            context: .
+            dockerfile: mcp/Dockerfile
+          - repository: mock-sso
+            context: sso
+            dockerfile: sso/Dockerfile
+          - repository: api-1
+            context: external_resources/api_1
+            dockerfile: external_resources/api_1/Dockerfile
+          - repository: api-2
+            context: external_resources/api_2
+            dockerfile: external_resources/api_2/Dockerfile
+          - repository: db-1
+            context: external_resources/db_1
+            dockerfile: external_resources/db_1/Dockerfile
+          - repository: db-2
+            context: external_resources/db_2
+            dockerfile: external_resources/db_2/Dockerfile
+          - repository: business-app
+            context: app
+            dockerfile: app/Dockerfile
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+      IMAGE_TAG: ${{ github.sha }}
+      REPOSITORY: ${{ matrix.repository }}
+      CONTEXT: ${{ matrix.context }}
+      DOCKERFILE: ${{ matrix.dockerfile }}
+    steps:
+      - uses: actions/checkout@v4
+        if: matrix.repository != 'business-app' || github.event_name == 'push' || inputs.deploy_app
+        with:
+          ref: ${{ github.sha }}
+      - name: Check image-build configuration
+        if: matrix.repository != 'business-app' || github.event_name == 'push' || inputs.deploy_app
+        run: |
+          python3 - <<'PY'
+          import os
+          required = ["AZURE_RESOURCE_GROUP", "AZURE_SUBSCRIPTION_ID", "ACR_NAME", "ACR_SERVER"]
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("Run local infra-setup first. Missing: " + ", ".join(missing))
+          PY
+      - uses: azure/login@v2
+        if: matrix.repository != 'business-app' || github.event_name == 'push' || inputs.deploy_app
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify registry target and log in
+        if: matrix.repository != 'business-app' || github.event_name == 'push' || inputs.deploy_app
+        run: |
+          set -euo pipefail
+          actual="$(az acr show --name "$ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --subscription "$AZURE_SUBSCRIPTION_ID" --query loginServer -o tsv)"
+          test "$actual" = "$ACR_SERVER"
+          az acr login --name "$ACR_NAME" --subscription "$AZURE_SUBSCRIPTION_ID" --only-show-errors
+      - name: Build and push immutable image
+        if: matrix.repository != 'business-app' || github.event_name == 'push' || inputs.deploy_app
+        run: |
+          set -euo pipefail
+          docker build -f "$DOCKERFILE" -t "$ACR_SERVER/$REPOSITORY:$IMAGE_TAG" "$CONTEXT"
+          docker push "$ACR_SERVER/$REPOSITORY:$IMAGE_TAG"
+
+  deploy:
+    needs: [verify, build]
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_REPOSITORY == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: demo
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+      IMAGE_TAG: ${{ github.sha }}
+      DEPLOY_APP: ${{ github.event_name == 'push' || inputs.deploy_app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Check image-deployment configuration
+        run: |
+          python3 - <<'PY'
+          import os
+          required = ["AZURE_RESOURCE_GROUP", "AZURE_SUBSCRIPTION_ID", "ACR_NAME", "ACR_SERVER"]
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("Run local infra-setup first. Missing: " + ", ".join(missing))
+          PY
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Require existing infrastructure and verify registry target
+        run: |
+          set -euo pipefail
+          actual="$(az acr show --name "$ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --subscription "$AZURE_SUBSCRIPTION_ID" --query loginServer -o tsv)"
+          test "$actual" = "$ACR_SERVER"
+          for app in runtime sso api-1 api-2 db-1 db-2; do
+            az containerapp show --name "$app" --resource-group "$AZURE_RESOURCE_GROUP" --subscription "$AZURE_SUBSCRIPTION_ID" --query name -o tsv
+          done
+          if [ "$DEPLOY_APP" = "true" ]; then
+            az containerapp show --name app --resource-group "$AZURE_RESOURCE_GROUP" --subscription "$AZURE_SUBSCRIPTION_ID" --query name -o tsv
+          fi
+      - name: Update only images while preserving existing secrets and infrastructure
+        run: |
+          set -euo pipefail
+          for image in db-1:db-1 db-2:db-2 api-1:api-1 api-2:api-2 sso:mock-sso runtime:external-resources; do
+            app=${image%%:*}
+            repository=${image#*:}
+            az containerapp update --name "$app" --resource-group "$AZURE_RESOURCE_GROUP" \
+              --subscription "$AZURE_SUBSCRIPTION_ID" --image "$ACR_SERVER/$repository:$IMAGE_TAG" \
+              --only-show-errors --output none
+          done
+          if [ "$DEPLOY_APP" = "true" ]; then
+            az containerapp update --name app --resource-group "$AZURE_RESOURCE_GROUP" \
+              --subscription "$AZURE_SUBSCRIPTION_ID" --image "$ACR_SERVER/business-app:$IMAGE_TAG" \
+              --only-show-errors --output none
+          fi
+      - name: Verify and publish the application URL
+        if: github.event_name == 'push' || inputs.deploy_app
+        run: |
+          set -euo pipefail
+          host="$(az containerapp show --name app --resource-group "$AZURE_RESOURCE_GROUP" --subscription "$AZURE_SUBSCRIPTION_ID" --query properties.configuration.ingress.fqdn -o tsv)"
+          test -n "$host"
+          url="https://$host"
+          curl --fail --silent --show-error --retry 12 --retry-delay 10 --retry-all-errors --connect-timeout 10 --max-time 30 "$url/health" >/dev/null
+          printf 'Workshop URL: %s\n' "$url"
+          printf '### Workshop\n\n%s\n' "$url" >> "$GITHUB_STEP_SUMMARY"

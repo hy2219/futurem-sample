@@ -1,0 +1,31 @@
+{
+  "version": 1, "id": "api_1", "type": "http",
+  "connection": { "urlEnv": "API_1_URL" },
+  "tools": [{
+    "name": "list_maintenance_windows",
+    "title": "API 1: 가상 유지보수 일정",
+    "description": "합성 제조 IT 시스템의 고정 유지보수 일정입니다. asset_id로 선택하며 알 수 없는 ID는 빈 배열입니다. 실시간 일정이 아닙니다.",
+    "authorization": { "audience": "mock.api", "scope": "maintenance_windows:read" },
+    "operation": { "method": "GET", "path": "/mock/api/maintenance-windows" },
+    "inputSchema": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "asset_id": { "type": "string", "minLength": 1 } }
+    },
+    "outputSchema": {
+      "type": "object", "additionalProperties": false, "required": ["maintenance_windows"],
+      "properties": {
+        "maintenance_windows": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["window_id", "asset_id", "start", "end", "impact", "status"],
+            "properties": {
+              "window_id": { "type": "string" }, "asset_id": { "type": "string" },
+              "start": { "type": "string" }, "end": { "type": "string" },
+              "impact": { "type": "string" }, "status": { "type": "string", "enum": ["scheduled"] }
+            }
+          }
+        }
+      }
+    }
+  }]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "FutureM synthetic ITSM demo",
+  "build": { "dockerfile": "Dockerfile" },
+  "features": { "ghcr.io/devcontainers/features/docker-in-docker:2": {} },
+  "postCreateCommand": "just install && just up",
+  "postStartCommand": "docker compose up -d --wait --wait-timeout 240",
+  "forwardPorts": [3100, 3101, 3102, 3103, 3104],
+  "portsAttributes": {
+    "3100": { "label": "App skeleton", "onAutoForward": "openBrowser" },
+    "3101": { "label": "Standalone demo MCP", "onAutoForward": "silent" },
+    "3102": { "label": "Mock SSO", "onAutoForward": "silent" },
+    "3103": { "label": "Maintenance windows", "onAutoForward": "silent" },
+    "3104": { "label": "Responsible teams", "onAutoForward": "silent" }
+  }
+}

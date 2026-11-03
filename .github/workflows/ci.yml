@@ -1,0 +1,132 @@
+name: Verify
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        package: [app, mcp, sso, external_resources/api_1, external_resources/api_2]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Require one matching unit test per implementation file
+        run: |
+          node --input-type=module <<'JS'
+          import { globSync, existsSync, statSync, readFileSync } from 'node:fs';
+          import { createRequire } from 'node:module';
+          const require = createRequire(new URL('./package.json', import.meta.url));
+          const metadata = JSON.parse(readFileSync('package.json', 'utf8'));
+          const dependencies = new Set(Object.keys({ ...metadata.dependencies, ...metadata.devDependencies }));
+          const files = Array.from(globSync(['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'], {
+            exclude: ['node_modules/**', 'dist/**', '.next/**'],
+          }));
+          for (const file of files) {
+            const text = readFileSync(file, 'utf8');
+            if (text.includes('@faker-js/faker') && file !== 'test_utils/stubs.ts') {
+              throw new Error('Faker must only be used in test_utils/stubs.ts: ' + file);
+            }
+            if (text.includes('test_utils/') && !file.startsWith('__mocks__/')) {
+              throw new Error('Only __mocks__ components may import test_utils: ' + file);
+            }
+            if (text.includes('__mocks__/') && !/\.test\.[jt]sx?$/.test(file) &&
+                !file.startsWith('integration/') && !file.startsWith('__mocks__/')) {
+              throw new Error('Runtime implementations must not import test doubles: ' + file);
+            }
+            if (file.startsWith('__mocks__/') && !existsSync(file.slice('__mocks__/'.length))) {
+              const target = file.slice('__mocks__/'.length).replace(/\.[jt]sx?$/, '');
+              const packageName = target.startsWith('@') ? target.split('/').slice(0, 2).join('/') : target.split('/')[0];
+              if (!dependencies.has(packageName)) throw new Error('Mock path must mirror an implementation or declared package: ' + file);
+              require.resolve(target);
+            }
+            if (/\.test\.[jt]sx?$/.test(file) && /mock\.(method|module|fn)\s*\(/.test(text)) {
+              throw new Error('Import prepared doubles from __mocks__ instead of defining them in tests: ' + file);
+            }
+            if (/\.test\.[jt]sx?$/.test(file) && /vi\.fn\s*\(/.test(text)) {
+              throw new Error('Define replacement implementations in __mocks__, not tests: ' + file);
+            }
+            if (file.startsWith('integration/') && /\bvi\.(mock|doMock|stubGlobal|spyOn)\s*\(/.test(text)) {
+              throw new Error('Integration must exercise real collaborators without module/global replacement: ' + file);
+            }
+            for (const replacement of text.matchAll(/\bvi\.mock\s*\(([^;]+)\);/g)) {
+              if (!/\.test\.[jt]sx?$/.test(file) || !replacement[1].includes('__mocks__/') ||
+                  !/=>\s*import\s*\(/.test(replacement[1])) {
+                throw new Error('vi.mock must load a prepared __mocks__ module: ' + file);
+              }
+            }
+          }
+          const sources = Array.from(globSync(['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'], {
+            exclude: ['node_modules/**', 'dist/**', '.next/**', 'integration/**', 'test_utils/**', '__mocks__/**'],
+          })).filter(path => !/\.(test|d)\.[jt]sx?$/.test(path));
+          if (!sources.length) throw new Error('No implementation files found');
+          for (const source of sources) {
+            const test = source.replace(/\.(tsx?|jsx?)$/, '.test.$1');
+            if (!existsSync(test) || statSync(test).size === 0) {
+              throw new Error('Missing colocated unit test: ' + test);
+            }
+          }
+          JS
+      - run: bun run typecheck
+      - run: bun run test
+
+  integration:
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: '1.58.0'
+      - name: Install independent package dependencies
+        run: just install
+      - name: Validate local infrastructure setup without cloud changes
+        run: bun run test:infra
+      - run: just lint
+      - run: just integration all
+      - run: just e2e
+      - if: always()
+        run: docker compose -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
+
+  ci:
+    name: ci
+    if: always()
+    needs: [unit, integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every verification job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          node <<'JS'
+          const results = Object.values(JSON.parse(process.env.NEEDS));
+          if (results.length !== 2 || results.some(job => job.result !== 'success')) {
+            throw new Error('Unit, integration and E2E must all succeed before merge or deployment.');
+          }
+          JS

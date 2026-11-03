@@ -1,0 +1,7 @@
+{
+  "subscriptionId": "00000000-0000-0000-0000-000000000000",
+  "repository": "your-account/your-repository",
+  "resourceGroup": "rg-futurem-sample",
+  "resourcePrefix": "futurem-sample",
+  "location": "koreacentral"
+}

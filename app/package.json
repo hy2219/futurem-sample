@@ -1,0 +1,30 @@
+{
+  "name": "simplified-sdlc-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0 --port 8080",
+    "build": "next build --webpack",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "start": "next start --hostname 0.0.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  },
+  "dependencies": {
+    "@hy2219/custom-ui": "./vendor/hy2219-custom-ui-0.2.0.tgz",
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}

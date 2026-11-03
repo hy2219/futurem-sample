@@ -1,0 +1,30 @@
+{
+  "version": 1, "id": "api_2", "type": "http",
+  "connection": { "urlEnv": "API_2_URL" },
+  "tools": [{
+    "name": "list_responsible_teams",
+    "title": "API 2: 가상 담당팀",
+    "description": "합성 담당팀을 team_id로 조회합니다. 모든 연락처는 example.com이며 실제 연락처가 아닙니다.",
+    "authorization": { "audience": "mock.api_2", "scope": "teams:read" },
+    "operation": { "method": "GET", "path": "/mock/api/teams" },
+    "inputSchema": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "team_id": { "type": "string", "minLength": 1 } }
+    },
+    "outputSchema": {
+      "type": "object", "additionalProperties": false, "required": ["teams"],
+      "properties": {
+        "teams": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["team_id", "name", "contact", "support_hours"],
+            "properties": {
+              "team_id": { "type": "string" }, "name": { "type": "string" },
+              "contact": { "type": "string" }, "support_hours": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }]
+}
