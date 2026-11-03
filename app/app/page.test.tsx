@@ -8,5 +8,6 @@ test("the read-only asset page uses the approved UI and a visible loading state 
   assert.ok(html.includes("로그인 상태를 확인하는 중"));
   assert.ok(html.includes('data-custom-ui="card"'));
   assert.ok(html.includes('data-custom-ui-version="0.2.0"'));
+  assert.ok(html.includes('href="/changes"'));
   assert.ok(!html.includes("demo1234"));
 });
